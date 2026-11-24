@@ -148,6 +148,17 @@ void lpwr_exti_init_hook(void) {
     setPinInput(HS_BAT_CABLE_PIN);
     waitInputPinDelay();
     palEnableLineEvent(HS_BAT_CABLE_PIN, PAL_EVENT_MODE_RISING_EDGE);
+
+#ifdef ISO_ENCODER_WAKE_PIN
+    // ISO-Port: Drehen am Drehknopf weckt die Tastatur. Nur Pin B des Encoders,
+    // weil Pin A (B7) dieselbe Weck-Leitung wie die Kabelerkennung (A7) hätte.
+    // Nicht im Tiefschlaf bei leerem Akku (dort weckt nur das Kabel).
+    if (!lower_sleep) {
+        setPinInputHigh(ISO_ENCODER_WAKE_PIN);
+        waitInputPinDelay();
+        palEnableLineEvent(ISO_ENCODER_WAKE_PIN, PAL_EVENT_MODE_BOTH_EDGES);
+    }
+#endif
 }
 
 void palcallback_cb(uint8_t line) {
