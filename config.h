@@ -116,3 +116,7 @@
  * verschiebt. Blau, Magenta, Pink und alle anderen Farben bleiben unverändert.
  * 0 = aus, 255 = voll. */
 #define ISO_PURPLE_RICH  140
+
+/* ISO-Port: Drehknopf weckt die Tastatur aus dem Schlaf (Encoder-Pin B).
+ * Zum Abschalten diese Zeile auskommentieren. */
+#define ISO_ENCODER_WAKE_PIN B6

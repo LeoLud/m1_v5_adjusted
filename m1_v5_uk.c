@@ -1233,16 +1233,28 @@ void rgb_matrix_hs_indicator(void) {
  *    Modus dauerhaft: 1/2/3 = Bluetooth (blau), 4 = 2.4 GHz (grün), 5 = Kabel (weiß).
  *    Zusätzlich zeigt die Leertaste den Akkustand (rot = leer ... grün = voll).
  *  - Aufwachen: Nach dem Aufwachen aus dem Energiesparmodus zeigt die Leertaste
- *    1 Sekunde lang den Akkustand (rot = leer ... grün = voll) und die Taste
- *    des aktuellen Modus leuchtet mit.
+ *    1 Sekunde lang den Akkustand (rot = leer ... grün = voll). Die Taste des
+ *    aktuellen Modus leuchtet 2 Sekunden, gezählt ab stehender Verbindung.
  *
  * Läuft vor den Statusanzeigen der Firmware; deren Blinken (z. B. Kopplung)
  * liegt also weiterhin obenauf.
  * ------------------------------------------------------------------------- */
 #define ISO_IND_WAKE_MS      1000
+#define ISO_IND_WAKE_CONN_MS 2000  // Verbindungsanzeige nach dem Aufwachen, ab stehender Verbindung
+#define ISO_IND_WAKE_WAIT_MS 15000 // so lange nach dem Aufwachen auf die Verbindung warten
 #define ISO_IND_LED_SPACE    82
 static const uint8_t iso_ind_fkey_led[4] = {22, 21, 20, 19}; // F1, F2, F3, F4
 static uint32_t iso_ind_wake_timer = 0;
+static uint32_t iso_ind_conn_timer = 0; // läuft ab dem Moment, in dem die Verbindung steht
+static bool     iso_ind_conn_wait  = false;
+
+// Steht die Verbindung im aktuellen Modus?
+static bool iso_ind_connected(void) {
+#ifdef WIRELESS_ENABLE
+    if (wireless_get_current_devs() != DEVS_USB) return *md_getp_state() == MD_STATE_CONNECTED;
+#endif
+    return USB_DRIVER.state == USB_ACTIVE;
+}
 
 static void iso_ind_set(uint8_t led, uint8_t led_min, uint8_t led_max, uint8_t r, uint8_t g, uint8_t b) {
     if (led >= led_min && led < led_max) rgb_matrix_set_color(led, r, g, b);
@@ -1311,11 +1323,25 @@ static void iso_ind_draw(uint8_t led_min, uint8_t led_max) {
     // Verbindung, solange Fn gehalten wird
     bool fn_held = layer_state & (((layer_state_t)1 << _FL) | ((layer_state_t)1 << _MFL));
 
-    // Nach dem Aufwachen: Akku auf der Leertaste + Verbindung
+    // Nach dem Aufwachen: Akku auf der Leertaste (ab Aufwachen) ...
     bool wake_show = iso_ind_wake_timer && timer_elapsed32(iso_ind_wake_timer) < ISO_IND_WAKE_MS;
-    if (iso_ind_wake_timer && !wake_show) iso_ind_wake_timer = 0;
 
-    if (fn_held || wake_show) iso_ind_connection(led_min, led_max);
+    // ... und Verbindung: Die Zeit startet erst, wenn die Verbindung wieder steht.
+    // Vorher blinkt die Firmware ohnehin die Verbindungstaste (Verbindungsaufbau)
+    // und würde die Anzeige überdecken.
+    if (iso_ind_conn_wait) {
+        if (iso_ind_connected()) {
+            iso_ind_conn_timer = timer_read32() | 1;
+            iso_ind_conn_wait  = false;
+        } else if (!iso_ind_wake_timer || timer_elapsed32(iso_ind_wake_timer) >= ISO_IND_WAKE_WAIT_MS) {
+            iso_ind_conn_wait = false; // keine Verbindung zustande gekommen
+        }
+    }
+    bool conn_show = iso_ind_conn_timer && timer_elapsed32(iso_ind_conn_timer) < ISO_IND_WAKE_CONN_MS;
+    if (iso_ind_conn_timer && !conn_show) iso_ind_conn_timer = 0;
+    if (iso_ind_wake_timer && !wake_show && !iso_ind_conn_wait) iso_ind_wake_timer = 0;
+
+    if (fn_held || conn_show) iso_ind_connection(led_min, led_max);
 
 #ifdef WIRELESS_ENABLE
     if (wake_show || fn_held) {
@@ -1433,7 +1459,12 @@ void hs_reset_settings(void) {
 void lpwr_wakeup_hook(void) {
     hs_mode_scan(false, confinfo.devs, confinfo.last_btdevs);
 
-    if (!confinfo.wake_ind_off) iso_ind_wake_timer = timer_read32() | 1; // Aufwach-Anzeige starten (nie 0), abschaltbar mit Fn + I
+    if (!confinfo.wake_ind_off) {
+        // Aufwach-Anzeige starten (nie 0), abschaltbar mit Fn + I
+        iso_ind_wake_timer = timer_read32() | 1;
+        iso_ind_conn_timer = 0;
+        iso_ind_conn_wait  = true;
+    }
 
     if (rgb_matrix_get_val() != 0)
         gpio_write_pin_high(LED_POWER_EN_PIN);
