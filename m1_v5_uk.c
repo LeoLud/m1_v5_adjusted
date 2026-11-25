@@ -1275,9 +1275,11 @@ static void iso_ind_connection(uint8_t led_min, uint8_t led_max) {
 
 // ISO-Port: Kabelmodus, Kabel steckt, aber der PC ist nicht aktiv (heruntergefahren
 // oder Standby): Nach ISO_USB_IDLE_OFF_MS geht die Tastatur in den Schlafzustand,
-// alle LEDs und die LED-Stromversorgung aus, kein Blinken. Sobald der PC sich
-// wieder meldet, ist sofort alles wie vorher.
+// alle LEDs und die LED-Stromversorgung aus, kein Blinken. Ein Tastendruck zeigt
+// für ISO_USB_IDLE_SHOW_MS die Beleuchtung und die blinkende Kabelanzeige. Sobald
+// der PC sich wieder meldet, ist sofort alles wie vorher.
 #define ISO_USB_IDLE_OFF_MS  5000
+#define ISO_USB_IDLE_SHOW_MS 5000 // nach einem Tastendruck so lange Licht + blinkende Kabelanzeige
 static uint32_t iso_usb_idle_timer = 0;
 
 static bool iso_usb_idle(void) {
@@ -1298,7 +1300,12 @@ static bool iso_usb_idle(void) {
         return false;
     }
     if (!iso_usb_idle_timer) iso_usb_idle_timer = timer_read32() | 1;
-    return timer_elapsed32(iso_usb_idle_timer) >= ISO_USB_IDLE_OFF_MS;
+    if (timer_elapsed32(iso_usb_idle_timer) < ISO_USB_IDLE_OFF_MS) return false;
+    // Tastendruck (oder Drehknopf) bei ausgeschaltetem PC: kurz Beleuchtung und
+    // die blinkende Kabelanzeige (Taste 5) zeigen, damit man sieht, dass die
+    // Tastatur lebt, aber keine Verbindung zum PC besteht. Danach wieder dunkel.
+    if (last_input_activity_elapsed() < ISO_USB_IDLE_SHOW_MS) return false;
+    return true;
 }
 
 static void iso_ind_draw(uint8_t led_min, uint8_t led_max) {
